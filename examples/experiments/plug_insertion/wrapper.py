@@ -52,22 +52,21 @@ class InsertPlugEnv(UR7eEnv):
 
 
 class TranslationOnlyWrapper(gym.ActionWrapper):
-    """Force rotation and gripper commands to zero."""
+    """Expose XYZ actions while keeping rotation and gripper fixed."""
 
     def __init__(self, env):
         super().__init__(env)
         if env.action_space.shape != (7,):
             raise ValueError("InsertPlug environment requires 7D internal actions")
+        self.action_space = gym.spaces.Box(-1.0, 1.0, shape=(3,), dtype=np.float32)
 
     def action(self, action):
-        action = np.asarray(action)
-        if action.shape != (7,) or not np.all(np.isfinite(action)):
-            raise ValueError("action must contain 7 finite values")
-        if not action.flags.writeable:
-            raise ValueError("action must be writable so replay data can be projected")
-        # The actor stores this same array after env.step; keep replay actions honest.
-        action[3:] = 0.0
-        return action
+        action = np.asarray(action, dtype=np.float32)
+        if action.shape != (3,) or not np.all(np.isfinite(action)):
+            raise ValueError("action must contain 3 finite XYZ values")
+        full_action = np.zeros(7, dtype=np.float32)
+        full_action[:3] = action
+        return full_action
 
 
 class SpacemouseIntervention(gym.Wrapper):
@@ -84,10 +83,9 @@ class SpacemouseIntervention(gym.Wrapper):
 
         expert_action = latest_spacemouse_action(
             self.device,
-            gripper=True,
-            translation_only=False,
+            gripper=False,
+            translation_only=True,
         )
-        expert_action[3:] = 0.0
         intervened = np.any(expert_action)
         observation, reward, terminated, truncated, info = self.env.step(
             expert_action if intervened else action

@@ -1,10 +1,10 @@
 """Control the UR7e environment with one SpaceMouse."""
 
+import argparse
 import time
 
 import numpy as np
 
-CONTROL_HZ = 10.0
 DEADZONE = 0.05
 INPUT_TIMEOUT = 0.25
 
@@ -39,30 +39,36 @@ def latest_spacemouse_action(device, gripper=False, translation_only=False):
     )
 
 
-def main():
-    import pyspacemouse
-    from experiments.pick.config import PickEnvConfig
-    from experiments.pick.wrapper import PickEnv, TranslationOnlyWrapper
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("task", nargs="?", default="plug_insertion")
+    return parser, parser.parse_args(argv)
 
-    env = TranslationOnlyWrapper(PickEnv(hz=CONTROL_HZ, config=PickEnvConfig()))
-    device = pyspacemouse.open()
-    if device is None:
-        env.close()
-        raise RuntimeError("未检测到 SpaceMouse")
+
+def main():
+    parser, args = parse_args()
+    from experiments.mappings import CONFIG_MAPPING
+
+    if args.task not in CONFIG_MAPPING:
+        parser.error(
+            f"unknown task {args.task!r}; choose from {', '.join(sorted(CONFIG_MAPPING))}"
+        )
+
+    env = CONFIG_MAPPING[args.task]().get_environment(
+        fake_env=False,
+        save_video=False,
+        classifier=False,
+    )
+    action = np.zeros(env.action_space.shape, dtype=env.action_space.dtype)
 
     print("当前 TCP 位姿:", env.unwrapped.currpos)
     input("按 Enter 启用 SpaceMouse，Ctrl+C 退出...")
     try:
         while True:
-            env.step(
-                latest_spacemouse_action(
-                    device, gripper=True, translation_only=False
-                )
-            )
+            env.step(action.copy())
     except KeyboardInterrupt:
         print("SpaceMouse 控制已停止")
     finally:
-        device.close()
         env.close()
 
 
